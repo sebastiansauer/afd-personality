@@ -1,0 +1,757 @@
+---
+title: "Data joining"
+author: "Sebastian Sauer"
+date: "12/29/2019"
+output: html_document
+params:
+  date: !r Sys.Date()
+  verbose: TRUE
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+
+# Setup
+
+
+```{r knitr-setup, echo = FALSE}
+knitr::opts_chunk$set(
+  comment = "#>",
+  collapse = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  cache = TRUE,
+  out.width = "70%",
+  fig.align = 'center',
+  fig.width = 6,
+  fig.asp =  0.4,  #0.618,  # 1 / phi
+  fig.show = "hold",
+  size = "tiny"
+)
+
+```
+
+
+
+
+
+
+## Load packages
+
+To install `pradadata`, do the following:
+
+```{r eval = FALSE}
+devtools::install_github("sebastiansauer/pradadata")
+```
+
+
+
+```{r message = FALSE}
+library(sjmisc)
+library(viridis)
+library(pradadata)  # elec data, get this package here: devtools::install_github("sebastiansauer/pradadata")
+library(tidyverse)
+library(knitr)
+library(here)
+library(readxl)
+library(data.table)
+```
+
+
+
+
+```{r}
+proj_root <- here::here()
+proj_root
+```
+
+
+
+
+
+## ROR data
+
+The ROR ("Raumordnungsregionen") are a set of 92 regions, which together divide up the whole of the German territory. A ROR tries to map a "functional" region, that is, some area that forms an economic region.
+
+
+Das were accessed from [this source](https://www.bbsr.bund.de/BBSR/DE/Raumbeobachtung/Downloads/downloads_node.html;jsessionid=2684F1C334E1997F839B8D961DE6F97C.live21303).
+
+```{r load-ror-data-xlsx}
+ror <- readxl::read_excel(paste0(proj_root, "/data-raw/download-ref-kreise_edited.xlsx"),
+                          skip = 2)
+```
+
+Note that these data were modified in the following way: Some column heads did *not* have names and some column heads shared the same names. Duplicates were resolved by adding the number "2" at the end of the name (of the first instance of the dublicate). See: https://de.wikipedia.org/wiki/Raumordnungsregion
+
+
+
+
+
+
+
+## Election data
+
+These data are provided by the Bundeswahlleiter 2017.
+
+
+```{r data-elec}
+data("elec_results")
+```
+
+
+In order to combine socioeconomic data with the election results, we can make use of data from the same source as above. Again accessible via the same R pacakge:
+
+```{r data-socec}
+data("socec")
+```
+
+Note that a code book is available for these data:
+
+```{r data-socec-dict}
+data("socec_dict")
+```
+
+
+
+These data will be used as predictors for modeling the election results.
+
+## Geo/Spatial data
+
+Next,, we will make use of geo data in order to geoplot the modeling results. The Bundeswahlleiter provides such data (again via `pradadata`):
+
+```{r data-shp}
+data("wahlkreise_shp")
+```
+
+
+
+Note: Data objects can also be downloaded [from this source](https://osf.io/2yhr9/).
+
+
+
+## Personlity data
+
+
+```{r}
+target_file <- paste0(proj_root, "/data-raw/obschonka-tab1.csv")
+
+stopifnot(file.exists(target_file))
+pers_data <- read_delim(target_file, delim = ",")
+```
+
+What's going on here? Why character where there should be numeric data? Let's try to rectify.
+
+```{r}
+pers_data2 <- pers_data %>% 
+  select(3:7) %>% 
+  map_df(~ parse_number(., locale = locale(decimal_mark = ","))) %>% 
+  bind_cols(pers_data %>% select(1:2)) %>% 
+  select(Raumordnungsregion, N, everything())
+
+names(pers_data2)
+```
+
+
+
+## ROR data
+
+The ROR ("Raumordnungsregionen") are a set of 92 regions, which together divide up the whole of the German territory. A ROR tries to map a "functional" region, that is, some area that forms an economic region.
+
+
+Das were accessed from [this source](https://www.bbsr.bund.de/BBSR/DE/Raumbeobachtung/Downloads/downloads_node.html;jsessionid=2684F1C334E1997F839B8D961DE6F97C.live21303).
+
+```{r load-ror-data}
+ror <- readxl::read_excel(paste0(proj_root, "/data-raw/download-ref-kreise_edited.xlsx"),
+                          skip = 2)
+```
+
+Note that these data were modified in the following way: Some column heads did *not* have names and some column heads shared the same names. Duplicates were resolved by adding the number "2" at the end of the name (of the first instance of the dublicate). See: https://de.wikipedia.org/wiki/Raumordnungsregion
+
+
+
+
+## Zip data
+Load zip data (PLZ):
+
+
+```{r load-zip-data}
+zip <- readxl::read_xlsx(paste0(proj_root, "/data-raw/Wahlkreise_PLZ.xlsx"))
+```
+
+
+This dataset was accessed form [DeStatis](https://www.destatis.de/DE/ZahlenFakten/LaenderRegionen/Regionales/Gemeindeverzeichnis/Administrativ/Archiv/GVAuszugQ/BTW20174Q2016.html)
+
+
+Copyright Notice:
+
+ Daten (im Auftrag der Herausgebergemeinschaft Statistische Ämter des Bundes und der Länder)
+      Statistisches Bundesamt, Wiesbaden 2017
+           Vervielfältigung und Verbreitung, auch auszugsweise, mit Quellenangabe gestattet.
+           
+          
+          
+
+
+
+# Data joining
+
+
+Now let's merge the data frames. There will also be some janitor work such as renaming columns etc.
+
+
+
+## Matching Personality to RORs
+
+
+Election data is based on electoral districts ("Wahlkreise"), but personality data is based on ROR (regional entities). Luckily there appears to be some 1:1 key matching.
+
+
+
+```{r merge-ror-pers}
+pers_ror <- pers_data2 %>% 
+  full_join(ror, by = c("Raumordnungsregion" = "ROR11name"))
+```
+
+
+Worked out quite well. A few RORs could not be matched though:
+
+
+```{r}
+pers_ror %>% 
+  select(1:7) %>% 
+  filter_all(any_vars(is.na(.)))
+```
+
+
+
+## Matching Wahlkreise to RORs
+
+
+In the `zip` dataset, there are the multiple geo data: 1. zip (PLZ) codes, 2. region codes (ROR), 3. Wahlrkeise (electoral districts).
+
+
+### Prepare `zip` dataset
+
+First, we reshape the ROR column to `numeric`:
+
+```{r}
+zip <- zip %>% 
+  mutate(AGS_num = as.numeric(AGS))
+```
+
+Check for missing values:
+
+
+```{r}
+zip %>% 
+  filter(is.na(AGS))
+```
+
+Which yields the same as:
+
+```{r}
+zip %>% 
+  filter(is.na(AGS_num))
+```
+
+
+Hence, we did not introduce new missings by this procedure.
+
+However, we should exlude emptry rows:
+
+```{r}
+zip %>% filter(complete.cases(.)) %>% nrow()
+```
+
+That means losing 7 rows.
+
+A closer look:
+
+```{r}
+zip %>% 
+  filter_all(any_vars(is.na(.)))
+```
+
+It seems we can savely delete those rows.
+
+
+```{r}
+zip2 <- zip %>% 
+  filter(complete.cases(.))
+```
+
+
+
+### Join
+
+
+Note that `wk` denotes "Wahlkreis":
+
+```{r}
+pers_ror_wk <- pers_ror %>% 
+  left_join(zip2, by = c("krs17" = "AGS_num"))
+```
+
+
+```{r}
+names(pers_ror_wk)
+```
+
+There are a lot of empty data, ie., a lot of Wahlrkeise without data. Can that be? Let's check.
+
+```{r}
+no_data_wk <- pers_ror_wk %>% 
+  select(AGS, Regionalschluessel, Raumordnungsregion, Extraversion, Wahlkreis_Name, PLZ) %>% 
+  filter_all(any_vars(is.na(.)))
+```
+
+
+```{r}
+data.table(no_data_wk)
+```
+
+
+How man rows have missings?
+
+```{r}
+nrow(no_data_wk)/nrow(pers_ror_wk)
+```
+
+
+About 2/3. That's ... a lot.
+
+### Problem solving
+
+Let's check for "Aachen", for instance. What's wrong here?
+
+```{r}
+zip2 %>% 
+  filter(str_detect(Gemeinde, "Aachen"))
+```
+
+
+What's thee AGS of Aachen in `per_ror_wk`?
+
+
+```{r}
+pers_ror_wk %>% 
+  select(krs17, krs17name, contains("AGS")) %>% 
+  filter(str_detect(krs17name, "Aachen"))  
+```
+
+
+It seems that the *four* leading digits are correct (without trailing zeros). However, the last digits seem to encode some details or subregions, for which we lack data.
+
+Let's try to use only the *four* leading for digits of `krs17` and `AGS`.
+
+
+```{r}
+zip3 <- zip2 %>% 
+  mutate(AGS_4 = str_sub(as.character(AGS_num), 1, 4))
+```
+
+
+Again, let's check Aachen:
+
+
+```{r}
+zip3 %>% 
+  filter(str_detect(Gemeinde, "Aachen"))
+```
+
+What about Aachen in `pers_ror`?
+
+```{r}
+options(scipen = 20)
+pers_ror2 <- pers_ror %>% 
+  mutate(krs17_4 = str_sub(as.character(krs17), 1, 4))
+```
+
+```{r}
+pers_ror2 %>% 
+  select(krs17, krs17name, Raumordnungsregion, krs17_4) %>% 
+  filter(str_detect(krs17name, "Aachen"))
+```
+
+
+
+Now it looks ok, at least for Aachen. Let's try again to merge.
+
+
+
+## Join again
+
+
+```{r}
+pers_ror_wk2 <- pers_ror2 %>% 
+  full_join(zip3, by = c("krs17_4" = "AGS_4"))
+```
+
+
+## Check
+
+```{r}
+dim(pers_ror_wk2)
+```
+
+
+
+```{r}
+names(pers_ror_wk2)
+```
+
+
+```{r}
+no_data_wk <- pers_ror_wk %>% 
+  select(AGS, krs17, krs17name, ROR11, AAG,  Regionalschluessel, Raumordnungsregion, Extraversion, Wahlkreis_Name, PLZ) %>% 
+  filter_all(any_vars(is.na(.)))
+```
+
+
+How bad is it?
+
+```{r}
+nrow(no_data_wk)/nrow(pers_ror_wk2)
+```
+
+About 1%. Not too bad. Which ones are affected?
+
+```{r}
+no_data_wk
+```
+
+
+
+Let's check for Aachen once more.
+
+```{r}
+pers_ror_wk2 %>% 
+  select(Raumordnungsregion, krs17name, AGS, Wahlkreis_Name, ROR11) %>% 
+  filter(str_detect(krs17name, "Aachen"))
+```
+
+
+Seems to be ok.
+
+
+Let's get back to the Wahlrkeis-Level.
+
+
+## Reduce to Wahlkreis-Level
+
+### Check
+Within each Wahlkreis, the personality values should be identical. Let's check for Aachen.
+
+
+
+```{r}
+pers_ror_wk2 %>% 
+  filter(str_detect(Wahlkreis_Name, "Aachen")) %>% 
+  select(Extraversion, Wahlkreis_Name, krs17_4, Regionalschluessel, Raumordnungsregion)
+```
+
+
+Yep. that's fine.
+
+
+```{r}
+pers_ror_wk2 %>% 
+  filter(str_detect(krs17_4, "5334")) %>% 
+  select(Extraversion, Wahlkreis_Name, krs17_4, Regionalschluessel, Raumordnungsregion)
+```
+
+
+OK.
+
+### Reduce
+
+
+```{r}
+pers_ror_wk3 <- pers_ror_wk2 %>% 
+  group_by(krs17_4) %>% 
+  filter(row_number() == 1) %>% 
+  ungroup()
+
+pers_ror_wk3 %>% names()
+```
+
+
+Let's move the important columns to the front.
+
+```{r}
+pers_ror_wk3 <- pers_ror_wk3 %>% 
+  select(Wahlkreis_Name, krs17_4, Regionalschluessel, Raumordnungsregion, land2, AGS, NUTS2name, ROR11, everything())
+
+pers_ror_wk3 %>% names()
+```
+
+
+Some Wahlkreise consist of more than one (Land-)Kreise. Let's confine ourselves to the smaller amount of data which is the 299 Wahlkreise.
+
+
+```{r}
+pers_ror_wk4 <- pers_ror_wk3 %>% 
+  group_by(Wahlkreis_Name) %>% 
+  filter(row_number() == 1) %>% 
+  ungroup()
+
+
+nrow(pers_ror_wk4)
+```
+
+
+Sadly, we do not appear to have data for each Wahlkreis, but only 214. Well, life can be dire.
+
+
+Let's double check on that.
+
+```{r}
+pers_ror_wk3 %>% 
+  distinct(Wahlkreis_Name) %>% 
+  nrow()
+```
+
+OK.
+
+
+
+
+## Join socio economic data
+
+
+### Prep for `socec`
+
+First, change the names of the `socec` data to a common format:
+
+```{r soceec-rename}
+socec_renamed <- socec %>%
+  rename(state = V01,
+         area_nr = V02,
+         area_name = V03,
+         total_n = V06,
+         germans_n = V07,
+         for_prop = V08,
+         pop_move_prop = V11,
+         pop_migr_background_prop = V19,
+         income = V26,
+         unemp_prop = V47) 
+
+```
+
+
+Compute some more columns and remove missing vlaues:
+
+```{r socec-new-cols}
+socec2 <- socec_renamed %>% 
+   mutate(foreigner_n = total_n - germans_n,
+         pop_move_n = pop_move_prop * total_n,
+         unemp_n = unemp_prop * total_n / 100,
+         pop_migr_background_n = pop_migr_background_prop * total_n / 100) %>% 
+  drop_na()
+```
+
+
+
+Same thing with the election data, here we only need the criterion (AfD success) and the ID variables for merging:
+
+```{r elec-results-new-cols}
+elec_results2 <- elec_results %>%
+  rename(afd_votes = AfD_3,
+         area_nr = district_nr,
+         area_name = district_name,
+         votes_total = votes_valid_3) %>% 
+   mutate(afd_prop = afd_votes/votes_total)    # valid votes only, and of the present Zweitstimme
+```
+
+Note that we are focusing on the Zweitstimme of the present election (hence the `3` in `votes_valid_3` and in `AfD_3`).
+
+## Merge/Join socec data with election data
+
+
+
+```{r merge}
+socec2 %>%
+  left_join(elec_results2, by = "area_name") %>% 
+  left_join(wahlkreise_shp, by = c("area_name" = "WKR_NAME")) -> d_all_with_na
+```
+
+
+## After-merge preparations
+
+
+
+Add variable for East (1) vs. West (0):
+
+
+```{r east-west-dummy}
+d_all_with_na <- d_all_with_na %>% 
+  mutate(east = case_when(
+    state %in% c("Mecklenburg-Vorpommern", "Brandenburg", "Berlin", "Sachsen-Anhalt", "Sachsen", "Thüringen") ~ "yes",
+    TRUE ~ "no"
+    ) 
+  )
+
+d_all_with_na$east_num <- ifelse(d_all_with_na$east == "yes", 1, 0)
+```
+
+
+
+## Main election data frame: d_short 
+
+We will also provide a version without the geo data, and in pure (old school) `data frame` form (ie., not as tibble)_
+
+```{r d-short-with-nas}
+d_all_with_na %>%
+  rename(area_nr = area_nr.x) %>% 
+  select(state,
+         area_nr,
+         area_name,
+         total_n,
+         germans_n,
+         foreigner_n,
+         for_prop,
+         pop_move_n,
+         pop_migr_background_n,
+         income ,
+         unemp_n,
+         unemp_prop,
+         votes_total,
+         afd_votes,
+         afd_prop,
+         state,
+         east,
+         east_num) -> d_short_with_nas
+
+if (params$verbose == TRUE) names(d_short_with_nas)
+```
+
+
+Remove NAs:
+
+```{r nona}
+d_short_with_nas %>% 
+  drop_na() -> d_short_nona
+```
+
+
+
+
+Multiply by 1000 to get the real numbers so that a count model gets the "right" data
+
+```{r mult-by-1000}
+d_short_nona %>%
+  mutate_at(vars(total_n, germans_n, foreigner_n, pop_move_n,
+                    pop_migr_background_n, unemp_n), funs(. * 1000)
+  ) -> d_short_nona_1000
+
+if (params$verbose == TRUE) glimpse(d_short_nona_1000)
+```
+
+
+
+
+## Join with rest of data
+
+
+```{r}
+pers_ror_wk4_elec <- pers_ror_wk4 %>% 
+  left_join(d_short_nona, by = c("Wahlkreis_Name" = "area_name"))
+```
+
+
+### Check: Row with NAs?
+
+
+```{r}
+pers_ror_wk4_elec_check <- pers_ror_wk4_elec %>% 
+  #select(Wahlkreis_Name, Extraversion, state, afd_prop, income) %>% 
+  filter_all(any_vars(is.na(.)))
+```
+
+
+Sadly, for these Wahlrkeise we do not have any personality data.
+
+
+### Check: Cols with NAs?
+
+Some columns are not so important; it's not problematic if we have some missings there. So let's identify in which columsn there are missings.
+
+
+```{r}
+pers_ror_wk4_elec_check %>% 
+  select_if(~ sum(is.na(.)) > 0)
+```
+
+
+
+## Exclude some columns without importance
+
+```{r}
+pers_ror_wk4_elec2 <- pers_ror_wk4_elec %>% 
+  select(-contains("metropolen"))
+```
+
+
+### Exclude NAs
+
+Again, let's see if there are columns with missing values:
+
+
+```{r}
+pers_ror_wk4_elec2 %>% 
+  select_if(~ sum(is.na(.)) > 0) %>% 
+  filter_all(any_vars(is.na(.)))
+```
+
+OK, those rows are deplete of personality data. We must live without them.
+
+```{r}
+pers_ror_wk4_elec3 <- pers_ror_wk4_elec2 %>% 
+  filter(!is.na(Extraversion))
+```
+
+
+Check:
+
+```{r}
+pers_ror_wk4_elec3 %>% 
+  filter(complete.cases(.)) %>% 
+  nrow(.) == nrow(pers_ror_wk4_elec3)
+```
+
+
+OK, no more NAs.
+
+## Sort the columns
+
+```{r}
+names(pers_ror_wk4_elec3)
+```
+
+
+
+```{r}
+pers_ror_wk4_elec3 <- pers_ror_wk4_elec3 %>% 
+  select(Wahlkreis_Name, Raumordnungsregion, land2, state, afd_prop, unemp_prop, east, income, Extraversion:Gewissenhaftigkeit, Flaeche, everything())
+
+names(pers_ror_wk4_elec3)
+```
+
+
+## Join Shape/Geo data
+
+
+```{r}
+pers_ror_wk4_elec3 %>% 
+  left_join(wahlkreise_shp, by = c("area_name" = "WKR_NAME")) -> pers_ror_wk4_elec3_shp
+
+```
+
+
+
+# Write to disk
+
+
+
