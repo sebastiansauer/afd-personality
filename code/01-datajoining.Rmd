@@ -1,5 +1,5 @@
 ---
-title: "Data joining"
+title: "01 - Data joining"
 author: "Sebastian Sauer"
 date: "12/29/2019"
 output: html_document
@@ -600,7 +600,6 @@ d_all_with_na$east_num <- ifelse(d_all_with_na$east == "yes", 1, 0)
 
 ## Main election data frame: d_short 
 
-We will also provide a version without the geo data, and in pure (old school) `data frame` form (ie., not as tibble)_
 
 ```{r d-short-with-nas}
 d_all_with_na %>%
@@ -622,7 +621,8 @@ d_all_with_na %>%
          afd_prop,
          state,
          east,
-         east_num) -> d_short_with_nas
+         east_num,
+         geometry) -> d_short_with_nas
 
 if (params$verbose == TRUE) names(d_short_with_nas)
 ```
@@ -657,7 +657,12 @@ if (params$verbose == TRUE) glimpse(d_short_nona_1000)
 
 ```{r}
 pers_ror_wk4_elec <- pers_ror_wk4 %>% 
-  left_join(d_short_nona, by = c("Wahlkreis_Name" = "area_name"))
+  left_join(d_short_nona_1000, by = c("Wahlkreis_Name" = "area_name"))
+```
+
+
+```{r}
+"area_name" %in% names(pers_ror_wk4_elec)
 ```
 
 
@@ -717,8 +722,11 @@ Check:
 
 ```{r}
 pers_ror_wk4_elec3 %>% 
-  filter(complete.cases(.)) %>% 
-  nrow(.) == nrow(pers_ror_wk4_elec3)
+  na.omit() %>% 
+  nrow(.) 
+
+
+nrow(pers_ror_wk4_elec3)
 ```
 
 
@@ -745,13 +753,22 @@ names(pers_ror_wk4_elec3)
 
 ```{r}
 pers_ror_wk4_elec3 %>% 
-  left_join(wahlkreise_shp, by = c("area_name" = "WKR_NAME")) -> pers_ror_wk4_elec3_shp
+  left_join(wahlkreise_shp, by = c("Wahlkreis_Name" = "WKR_NAME")) -> pers_ror_wk4_elec3_shp
 
 ```
 
 
 
+
 # Write to disk
 
+
+As we have list columns, we cannot save as .CSV but we need a serialized file.
+
+```{r}
+target_file <- paste0(proj_root, "/objects/d_joined.rds")
+
+write_rds(pers_ror_wk4_elec3_shp, path = target_file)
+```
 
 
