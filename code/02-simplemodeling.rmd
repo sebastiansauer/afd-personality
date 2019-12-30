@@ -1,0 +1,95 @@
+---
+title: "02 - Simple Linear Model"
+author: "Sebastian Sauer"
+date: "12/29/2019"
+output: html_document
+params:
+  date: !r Sys.Date()
+  verbose: TRUE
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+
+# Setup
+
+
+```{r knitr-setup, echo = FALSE}
+knitr::opts_chunk$set(
+  comment = "#>",
+  collapse = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  cache = TRUE,
+  out.width = "70%",
+  fig.align = 'center',
+  fig.width = 6,
+  fig.asp =  0.4,  #0.618,  # 1 / phi
+  fig.show = "hold",
+  size = "tiny"
+)
+
+```
+
+
+
+
+
+
+## Load packages
+
+To install `pradadata`, do the following:
+
+```{r eval = FALSE}
+devtools::install_github("sebastiansauer/pradadata")
+```
+
+
+
+```{r message = FALSE}
+library(sjmisc)
+library(viridis)
+library(tidyverse)
+library(knitr)
+library(here)
+library(data.table)
+library(broom)
+```
+
+
+
+
+```{r}
+proj_root <- here::here()
+proj_root
+```
+
+
+
+# Load data
+
+
+This is the main data from the previous step:
+
+
+```{r}
+target_file <- paste0(proj_root, "/objects/d_joined.rds")
+d <- read_rds(target_file)
+```
+
+
+
+# Simple modeling of AFD voting success
+
+All models refer to the Bundestagswahl 2017.
+
+
+```{r}
+lm1 <- lm(afd_prop ~ Extraversion + Verträglichkeit + Neurotizismus + Offenheit + state, data = d)
+tidy(lm1)
+```
+
+
+
