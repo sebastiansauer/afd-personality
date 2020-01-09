@@ -16,3 +16,7 @@ Voting success is modelled as a function of the Big Five personality system and 
 We use linear models in different variants to analyse our theoretical model.
 
 
+
+
+
+
