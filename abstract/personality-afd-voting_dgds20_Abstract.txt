@@ -1,4 +1,5 @@
 What's the personality of AfD-Voters?
+
 A large-scale Bayes multi-level modeling study on the effect of personality and regional factors on voting the AfD
 
 
