@@ -2,8 +2,6 @@ What's the personality of AfD-Voters?
 
 A large-scale Bayes multi-level modeling study on the effect of personality and regional factors on voting the AfD
 
-
-
 The party "Alternative fuer Deutschland" (AfD) is a right-wing to far-right political party in Germany.
 Founded in 2013, it that has managed to gain seats in all states parliaments as well as in the federal parliament within a short period of time. 
 The AfD became the third-largest party in Germany after the 2017 federal elections.
